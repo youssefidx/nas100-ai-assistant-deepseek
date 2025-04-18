@@ -6,9 +6,9 @@ from utils.support_resistance import detect_zones
 from utils.trade_signals import generate_trade_signals
 from utils.backtest import backtest_strategy
 
-# Configuration
-st.set_page_config(page_title="NAS100 AI Trading Assistant", layout="wide", page_icon="📈")
-st.title("📊 NAS100 AI Trading Assistant")
+# Config
+st.set_page_config(layout="wide", page_title="NAS100 Trading Assistant")
+st.title("📈 NAS100 AI Trading Assistant")
 
 # Custom CSS
 st.markdown("""
@@ -25,41 +25,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Sample Data
-with st.sidebar:
-    st.markdown("### 📁 Sample Data")
-    sample_data = pd.DataFrame({
-        'Datetime': pd.date_range(start='2024-01-01', periods=100, freq='5T'),
-        'Open': np.linspace(18000, 18200, 100),
-        'High': np.linspace(18005, 18205, 100),
-        'Low': np.linspace(17995, 18195, 100),
-        'Close': np.linspace(18000, 18200, 100),
-        'Volume': np.random.randint(1000, 5000, 100)
-    })
-    st.download_button(
-        "⬇️ Download Sample Data",
-        sample_data.to_csv(index=False),
-        "nas100_sample.csv"
-    )
-
-# Main App Logic
-uploaded_file = st.file_uploader("Upload NAS100 Data (CSV)", type=["csv"])
+# Data Upload
+uploaded_file = st.file_uploader("Upload Market Data (CSV)", type=["csv"])
 if uploaded_file:
     try:
         df = pd.read_csv(uploaded_file, parse_dates=["Datetime"], index_col="Datetime")
         
         # Data Validation
         if not {'Open','High','Low','Close'}.issubset(df.columns):
-            st.error("Missing required price columns")
+            st.error("❌ Missing required price columns")
             st.stop()
 
-        # Generate Levels and Signals
+        # Generate Trading Signals
         support, resistance = detect_zones(df)
         signals = generate_trade_signals(df, (support, resistance))
         
-        # Visualizations
         if not signals.empty:
-            # Price Chart
+            # Interactive Price Chart
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                              vertical_spacing=0.05, row_heights=[0.7, 0.3])
             
@@ -69,7 +51,7 @@ if uploaded_file:
                 low=df['Low'], close=df['Close'], name="Price"
             ), row=1, col=1)
             
-            # Signals
+            # Trading Signals
             buys = signals[signals['Signal'] == 'Buy']
             sells = signals[signals['Signal'] == 'Sell']
             fig.add_trace(go.Scatter(
@@ -92,12 +74,18 @@ if uploaded_file:
             fig.update_layout(height=600, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
 
-            # Backtest
-            st.subheader("⚙️ Backtest Configuration")
-            sl, tp = st.slider("Stop Loss %", 0.5, 5.0, 1.5), st.slider("Take Profit %", 1.0, 10.0, 3.0)
-            result = backtest_strategy(df, signals.set_index('Datetime'), sl, tp)
+            # Backtest Configuration
+            st.subheader("⚙️ Backtest Parameters")
+            col1, col2 = st.columns(2)
+            with col1:
+                sl_pct = st.slider("Stop Loss %", 0.5, 5.0, 1.5, step=0.1)
+            with col2:
+                tp_pct = st.slider("Take Profit %", 0.5, 10.0, 3.0, step=0.1)
             
-            # Metrics
+            # Run Backtest
+            result = backtest_strategy(df, signals.set_index('Datetime'), sl_pct, tp_pct)
+            
+            # Performance Dashboard
             st.subheader("📊 Performance Metrics")
             cols = st.columns(4)
             metrics = [
@@ -117,16 +105,28 @@ if uploaded_file:
                     </div>
                     """, unsafe_allow_html=True)
             
-            # Equity Curve
+            # Equity Curve Visualization
             st.subheader("📈 Equity Curve")
-            eq_fig = go.Figure()
+            eq_df = pd.DataFrame({
+                'Equity': result['equity'],
+                'Drawdown': [100*(1 - x/max(result['equity'][:i+1])) 
+                            for i, x in enumerate(result['equity'])]
+            })
+            
+            eq_fig = make_subplots(specs=[[{"secondary_y": True}]])
             eq_fig.add_trace(go.Scatter(
-                x=list(range(len(result['equity']))),
-                y=result['equity'],
-                fill='tozeroy',
-                line=dict(color='#4e79a7')
-            ))
-            eq_fig.update_layout(height=400, yaxis_title="Equity ($)")
+                x=eq_df.index, y=eq_df['Equity'],
+                name="Equity", line=dict(color='#4e79a7')
+            ), secondary_y=False)
+            eq_fig.add_trace(go.Bar(
+                x=eq_df.index, y=eq_df['Drawdown'],
+                name="Drawdown", marker=dict(color='#e15759', opacity=0.3)
+            ), secondary_y=True)
+            eq_fig.update_layout(
+                height=400,
+                yaxis_title="Equity ($)",
+                yaxis2=dict(title="Drawdown %", range=[0, 100])
+            )
             st.plotly_chart(eq_fig, use_container_width=True)
             
             # Signals Table
@@ -138,15 +138,15 @@ if uploaded_file:
                 height=400
             )
             
-            # Download
+            # Data Export
             st.download_button(
-                "📥 Export Signals",
+                "📥 Export Signals as CSV",
                 signals.to_csv(index=False),
-                "trade_signals.csv"
+                "nas100_signals.csv"
             )
             
         else:
-            st.warning("No trade signals generated with current parameters")
+            st.warning("⚠️ No trade signals generated with current parameters")
             
     except Exception as e:
-        st.error(f"Error processing data: {str(e)}")
+        st.error(f"❌ Processing Error: {str(e)}")
