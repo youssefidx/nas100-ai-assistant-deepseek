@@ -1,58 +1,55 @@
 import pandas as pd
+import numpy as np
 
-def backtest_strategy(df, signals, sl_pct, tp_pct):
-    # Input validation
-    if not isinstance(signals, pd.DataFrame):
-        raise ValueError("Signals must be a pandas DataFrame")
-        
-    if 'Datetime' not in signals.columns or 'Price' not in signals.columns or 'Signal' not in signals.columns:
-        raise ValueError("Signals DataFrame must contain 'Datetime', 'Price', and 'Signal' columns")
-
-    # Ensure proper indexing
-    if not isinstance(signals.index, pd.DatetimeIndex):
-        signals = signals.set_index('Datetime')
+def backtest_strategy(df, signals, sl_pct=1.5, tp_pct=5.0):
+    if signals.empty:
+        return {"equity": [10000], "stats": {"error": "No signals provided"}}
     
-    # Check alignment with price data
-    missing_dates = signals.index[~signals.index.isin(df.index)]
-    if len(missing_dates) > 0:
-        raise ValueError(f"{len(missing_dates)} signal timestamps missing in price data")
-
-    # Backtest logic
     equity = 10000
-    balance = equity
-    results = []
-
-    for signal in signals.itertuples():  # Removed erroneous semicolon
-        entry_price = signal.Price
-        is_buy = signal.Signal == 'Buy'
-        pnl = 0  # Initialize with default value
-
-        sl_price = entry_price * (1 - sl_pct / 100) if is_buy else entry_price * (1 + sl_pct / 100)
-        tp_price = entry_price * (1 + tp_pct / 100) if is_buy else entry_price * (1 - tp_pct / 100)
-
-        for i in range(df.index.get_loc(signal.Index), len(df)):
-            high = df['High'].iloc[i]
-            low = df['Low'].iloc[i]
-
-            if is_buy:
-                if low <= sl_price:
-                    pnl = -sl_pct
-                    break
-                elif high >= tp_price:
-                    pnl = tp_pct
-                    break
-            else:
-                if high >= sl_price:
-                    pnl = -sl_pct
-                    break
-                elif low <= tp_price:
-                    pnl = tp_pct
-                    break
-
-        if pnl == 0:
-            continue  # Skip trades with no exit condition
+    results = [equity]
+    wins = 0
+    
+    signals = signals.sort_index()
+    
+    for i, (dt, row) in enumerate(signals.iterrows()):
+        try:
+            idx = df.index.get_loc(dt)
+            entry = row['Price']
+            is_buy = row['Signal'] == 'Buy'
             
-        balance *= (1 + pnl / 100)
-        results.append(balance)
-
-    return pd.DataFrame({"Equity": results}), results
+            sl = entry * (1 - sl_pct/100) if is_buy else entry * (1 + sl_pct/100)
+            tp = entry * (1 + tp_pct/100) if is_buy else entry * (1 - tp_pct/100)
+            
+            for j in range(idx, min(idx+100, len(df)):  # Max 100 candles hold
+                high, low = df['High'].iloc[j], df['Low'].iloc[j]
+                
+                if is_buy:
+                    if low <= sl: 
+                        equity *= 0.985  # -1.5%
+                        break
+                    elif high >= tp:
+                        equity *= 1.05  # +5%
+                        wins += 1
+                        break
+                else:
+                    if high >= sl:
+                        equity *= 0.985
+                        break
+                    elif low <= tp:
+                        equity *= 1.05
+                        wins += 1
+                        break
+            
+            results.append(equity)
+            
+        except Exception as e:
+            continue
+    
+    stats = {
+        "final_equity": round(equity, 2),
+        "total_trades": len(signals),
+        "win_rate": f"{wins/max(1,len(signals)):.1%}",
+        "max_drawdown": f"{(10000 - min(results))/100:.1f}%"
+    }
+    
+    return {"equity": results, "stats": stats}
