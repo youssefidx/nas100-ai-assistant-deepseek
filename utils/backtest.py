@@ -25,12 +25,14 @@ def backtest_strategy(df, signals, sl_pct=1.5, tp_pct=3.0):
             entry = row['Price']
             is_buy = row['Signal'] == 'Buy'
             
-            # Risk 2% per trade
-            risk_amount = equity * 0.02
+            # Position Sizing (Risk 2% per trade)
+            position_size = (equity * 0.02) / (entry * (sl_pct/100))
+            
+            # Calculate exit levels
             sl = entry * (1 - sl_pct/100) if is_buy else entry * (1 + sl_pct/100)
             tp = entry * (1 + tp_pct/100) if is_buy else entry * (1 - tp_pct/100)
             
-            # Simulate trade
+            # Simulate trade execution
             for i in range(idx, min(idx+100, len(df))):
                 current_low = df['Low'].iloc[i]
                 current_high = df['High'].iloc[i]
@@ -52,18 +54,18 @@ def backtest_strategy(df, signals, sl_pct=1.5, tp_pct=3.0):
                         wins += 1
                         break
             
-            # Update equity
+            # Update account balance
             equity += (equity * (pnl/100))
             results.append(equity)
             
-            # Track drawdown
+            # Calculate drawdown
             if equity > peak:
                 peak = equity
             current_dd = (peak - equity)/peak
             if current_dd > max_dd:
                 max_dd = current_dd
                 
-        except:
+        except Exception as e:
             continue
     
     return {
