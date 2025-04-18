@@ -48,3 +48,41 @@ if uploaded_file:
         get_table_download_link(signals)
     else:
         st.warning("No trade signals detected.")
+        
+        # After signal generation
+if not signals.empty:
+    st.subheader("🔍 Filtered Signals (Top 20)")
+    st.dataframe(
+        signals.head(20).style.format({
+            'Price': '{:.2f}'
+        }),
+        height=400
+    )
+    
+    # Backtest and display
+    result = backtest_strategy(df, signals.set_index('Datetime'), sl_pct, tp_pct)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("💰 Final Equity", f"${result['stats']['final_equity']}")
+        st.metric("🎯 Win Rate", result['stats']['win_rate'])
+    with col2:
+        st.metric("📊 Total Trades", result['stats']['total_trades'])
+        st.metric("⚠️ Max Drawdown", result['stats']['max_drawdown'])
+    
+    st.area_chart(pd.DataFrame({'Equity': result['equity']))
+    
+    # After detect_zones()
+st.subheader("📊 Key Levels")
+
+supp, res = detect_zones(df)
+support = sorted(list(set(round(s, 2) for s in supp if s > 0))[:10]  # Top 10
+resistance = sorted(list(set(round(r, 2) for r in res if r > 0))[-10:]  # Top 10
+
+col1, col2 = st.columns(2)
+with col1:
+    st.markdown("#### 🛑 Support")
+    st.json(support)
+with col2:
+    st.markdown("#### 🚀 Resistance") 
+    st.json(resistance)
