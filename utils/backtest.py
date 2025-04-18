@@ -1,23 +1,23 @@
 import pandas as pd
 import numpy as np
 
-def backtest_strategy(df, signals, sl_pct=1.5, tp_pct=5.0):
+def backtest_strategy(df, signals, sl_pct=1.5, tp_pct=3.0):
     if signals.empty:
-        return {"equity": [10000], "stats": {
-            "final_equity": 10000,
-            "total_trades": 0,
-            "win_rate": "0.0%",
-            "max_drawdown": "0.0%"
-        }}
+        return {
+            "equity": [10000],
+            "stats": {
+                "final_equity": 10000,
+                "total_trades": 0,
+                "win_rate": "0.0%",
+                "max_drawdown": "0.0%"
+            }
+        }
     
-    initial_equity = 10000
-    equity = initial_equity
+    equity = 10000
     results = [equity]
     wins = 0
-    drawdowns = []
-    current_peak = initial_equity
-
-    signals = signals.sort_index()
+    peak = equity
+    max_dd = 0
     
     for dt, row in signals.iterrows():
         try:
@@ -25,15 +25,15 @@ def backtest_strategy(df, signals, sl_pct=1.5, tp_pct=5.0):
             entry = row['Price']
             is_buy = row['Signal'] == 'Buy'
             
-            # Position sizing (risk 2% per trade)
-            position_size = (equity * 0.02) / (entry * (sl_pct/100))
-            
+            # Risk 2% per trade
+            risk_amount = equity * 0.02
             sl = entry * (1 - sl_pct/100) if is_buy else entry * (1 + sl_pct/100)
             tp = entry * (1 + tp_pct/100) if is_buy else entry * (1 - tp_pct/100)
             
-            for j in range(idx, min(idx+100, len(df))):
-                current_low = df['Low'].iloc[j]
-                current_high = df['High'].iloc[j]
+            # Simulate trade
+            for i in range(idx, min(idx+100, len(df))):
+                current_low = df['Low'].iloc[i]
+                current_high = df['High'].iloc[i]
                 
                 if is_buy:
                     if current_low <= sl:
@@ -52,25 +52,26 @@ def backtest_strategy(df, signals, sl_pct=1.5, tp_pct=5.0):
                         wins += 1
                         break
             
-            # Update equity with proper position sizing
+            # Update equity
             equity += (equity * (pnl/100))
             results.append(equity)
             
-            # Track drawdowns
-            if equity > current_peak:
-                current_peak = equity
-            drawdowns.append((current_peak - equity)/current_peak)
-            
-        except Exception as e:
+            # Track drawdown
+            if equity > peak:
+                peak = equity
+            current_dd = (peak - equity)/peak
+            if current_dd > max_dd:
+                max_dd = current_dd
+                
+        except:
             continue
     
-    max_drawdown = max(drawdowns) * 100 if drawdowns else 0
-    
-    stats = {
-        "final_equity": round(equity, 2),
-        "total_trades": len(signals),
-        "win_rate": f"{wins/max(1,len(signals)):.1%}",
-        "max_drawdown": f"{max_drawdown:.1f}%"
+    return {
+        "equity": results,
+        "stats": {
+            "final_equity": round(equity, 2),
+            "total_trades": len(signals),
+            "win_rate": f"{wins/max(1,len(signals)):.1%}",
+            "max_drawdown": f"{max_dd*100:.1f}%"
+        }
     }
-    
-    return {"equity": results, "stats": stats}
