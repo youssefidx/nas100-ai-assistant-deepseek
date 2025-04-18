@@ -1,152 +1,217 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import numpy as np
 from utils.support_resistance import detect_zones
 from utils.trade_signals import generate_trade_signals
 from utils.backtest import backtest_strategy
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
-# Config
-st.set_page_config(layout="wide", page_title="NAS100 Trading Assistant")
-st.title("📈 NAS100 AI Trading Assistant")
+st.set_page_config(page_title="NAS100 AI Trading Assistant", layout="wide", page_icon="📈")
+st.title("📊 NAS100 AI Trading Assistant")
 
-# Custom CSS
+# Custom CSS for better visuals
 st.markdown("""
 <style>
-.metric-card {
+.metric-box {
     padding: 15px;
     border-radius: 10px;
-    background: white;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    background-color: #f0f2f6;
     margin-bottom: 15px;
 }
-.profit { color: #00aa00; }
-.loss { color: #ff0000; }
+.positive {
+    color: #00aa00;
+}
+.negative {
+    color: #ff0000;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# Data Upload
-uploaded_file = st.file_uploader("Upload Market Data (CSV)", type=["csv"])
+# Sample data download
+with st.sidebar:
+    st.markdown("### 🧪 Sample Data")
+    sample_data = pd.DataFrame({
+        'Datetime': pd.date_range(start='2024-01-01', periods=100, freq='5T'),
+        'Open': np.cumsum(np.random.uniform(-5, 5, 100)) + 18000,
+        'High': np.cumsum(np.random.uniform(-5, 5, 100)) + 18005,
+        'Low': np.cumsum(np.random.uniform(-5, 5, 100)) + 17995,
+        'Close': np.cumsum(np.random.uniform(-5, 5, 100)) + 18000,
+        'Volume': np.random.randint(500, 2000, 100)
+    })
+    st.download_button(
+        label="⬇️ Download Sample CSV",
+        data=sample_data.to_csv(index=False),
+        file_name="nas100_sample_data.csv",
+        mime="text/csv"
+    )
+
+# Main app
+uploaded_file = st.file_uploader("📤 Upload NAS100 CSV file", type=["csv"])
 if uploaded_file:
     try:
         df = pd.read_csv(uploaded_file, parse_dates=["Datetime"], index_col="Datetime")
         
-        # Data Validation
-        if not {'Open','High','Low','Close'}.issubset(df.columns):
-            st.error("❌ Missing required price columns")
+        # Data validation
+        required_cols = {'Open', 'High', 'Low', 'Close'}
+        if not required_cols.issubset(df.columns):
+            st.error(f"❌ Missing required columns. Needed: {required_cols}")
             st.stop()
 
-        # Generate Trading Signals
-        support, resistance = detect_zones(df)
-        signals = generate_trade_signals(df, (support, resistance))
+        # Price chart
+        st.subheader("📈 Price Chart with Signals")
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                           vertical_spacing=0.05, row_heights=[0.7, 0.3])
         
-        if not signals.empty:
-            # Interactive Price Chart
-            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                             vertical_spacing=0.05, row_heights=[0.7, 0.3])
-            
-            # Candlesticks
-            fig.add_trace(go.Candlestick(
-                x=df.index, open=df['Open'], high=df['High'],
-                low=df['Low'], close=df['Close'], name="Price"
-            ), row=1, col=1)
-            
-            # Trading Signals
-            buys = signals[signals['Signal'] == 'Buy']
-            sells = signals[signals['Signal'] == 'Sell']
-            fig.add_trace(go.Scatter(
-                x=buys['Datetime'], y=buys['Price'],
-                mode='markers', name='Buy',
-                marker=dict(color='green', size=10, symbol='triangle-up')
-            ), row=1, col=1)
-            fig.add_trace(go.Scatter(
-                x=sells['Datetime'], y=sells['Price'],
-                mode='markers', name='Sell',
-                marker=dict(color='red', size=10, symbol='triangle-down')
-            ), row=1, col=1)
-            
-            # Volume
-            fig.add_trace(go.Bar(
-                x=df.index, y=df['Volume'],
-                name="Volume", marker_color='rgba(100, 150, 200, 0.6)'
-            ), row=2, col=1)
-            
-            fig.update_layout(height=600, xaxis_rangeslider_visible=False)
-            st.plotly_chart(fig, use_container_width=True)
+        # Candlestick
+        fig.add_trace(go.Candlestick(
+            x=df.index,
+            open=df['Open'],
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close'],
+            name="Price"
+        ), row=1, col=1)
 
-            # Backtest Configuration
+        # Support/Resistance
+        support, resistance = detect_zones(df)
+        
+        for level in support:
+            fig.add_hline(y=level, line_dash="dot", 
+                         line_color="green", opacity=0.5,
+                         annotation_text=f"S {level:.1f}", 
+                         annotation_position="bottom right",
+                         row=1, col=1)
+        
+        for level in resistance:
+            fig.add_hline(y=level, line_dash="dot", 
+                         line_color="red", opacity=0.5,
+                         annotation_text=f"R {level:.1f}", 
+                         annotation_position="top right",
+                         row=1, col=1)
+
+        # Volume
+        fig.add_trace(go.Bar(
+            x=df.index,
+            y=df['Volume'],
+            name="Volume",
+            marker_color='rgba(100, 100, 200, 0.6)'
+        ), row=2, col=1)
+
+        fig.update_layout(height=600, showlegend=False, 
+                         xaxis_rangeslider_visible=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Generate signals
+        use_volume = st.checkbox("Use Volume Confirmation", value=True)
+        signals = generate_trade_signals(df, (support, resistance), use_volume=use_volume)
+
+        if not signals.empty:
+            # Backtest configuration
             st.subheader("⚙️ Backtest Parameters")
             col1, col2 = st.columns(2)
             with col1:
                 sl_pct = st.slider("Stop Loss %", 0.5, 5.0, 1.5, step=0.1)
             with col2:
                 tp_pct = st.slider("Take Profit %", 0.5, 10.0, 3.0, step=0.1)
-            
-            # Run Backtest
+
+            # Run backtest
             result = backtest_strategy(df, signals.set_index('Datetime'), sl_pct, tp_pct)
             
-            # Performance Dashboard
+            # Performance metrics
             st.subheader("📊 Performance Metrics")
-            cols = st.columns(4)
-            metrics = [
-                ("💰 Final Equity", f"${result['stats']['final_equity']:,.2f}", 
-                 "profit" if result['stats']['final_equity'] >= 10000 else "loss"),
-                ("🎯 Win Rate", result['stats']['win_rate'], None),
-                ("📈 Total Trades", result['stats']['total_trades'], None),
-                ("⚠️ Max Drawdown", result['stats']['max_drawdown'], "loss")
-            ]
+            col1, col2, col3, col4 = st.columns(4)
             
-            for col, (title, value, style) in zip(cols, metrics):
-                with col:
-                    st.markdown(f"""
-                    <div class="metric-card">
-                        <h3>{title}</h3>
-                        <h2 class="{style if style else ''}">{value}</h2>
-                    </div>
-                    """, unsafe_allow_html=True)
+            final_equity = result['stats']['final_equity']
+            equity_change = (final_equity - 10000) / 100
+            equity_class = "positive" if equity_change >= 0 else "negative"
             
-            # Equity Curve Visualization
-            st.subheader("📈 Equity Curve")
-            eq_df = pd.DataFrame({
+            with col1:
+                st.markdown(f"""
+                <div class="metric-box">
+                    <h3>Final Equity</h3>
+                    <h2 class="{equity_class}">${final_equity:,.2f}</h2>
+                    <small>{equity_change:+.1f}%</small>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                <div class="metric-box">
+                    <h3>Win Rate</h3>
+                    <h2>{result['stats']['win_rate']}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                st.markdown(f"""
+                <div class="metric-box">
+                    <h3>Total Trades</h3>
+                    <h2>{result['stats']['total_trades']}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col4:
+                st.markdown(f"""
+                <div class="metric-box">
+                    <h3>Max Drawdown</h3>
+                    <h2 class="negative">{result['stats']['max_drawdown']}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # Equity curve
+            st.subheader("💰 Equity Curve")
+            equity_df = pd.DataFrame({
                 'Equity': result['equity'],
-                'Drawdown': [100*(1 - x/max(result['equity'][:i+1])) 
-                            for i, x in enumerate(result['equity'])]
+                'Drawdown': [100*(1 - x/max(result['equity'][:i+1])) for i, x in enumerate(result['equity'])]
             })
             
-            eq_fig = make_subplots(specs=[[{"secondary_y": True}]])
-            eq_fig.add_trace(go.Scatter(
-                x=eq_df.index, y=eq_df['Equity'],
-                name="Equity", line=dict(color='#4e79a7')
-            ), secondary_y=False)
-            eq_fig.add_trace(go.Bar(
-                x=eq_df.index, y=eq_df['Drawdown'],
-                name="Drawdown", marker=dict(color='#e15759', opacity=0.3)
-            ), secondary_y=True)
-            eq_fig.update_layout(
-                height=400,
-                yaxis_title="Equity ($)",
-                yaxis2=dict(title="Drawdown %", range=[0, 100])
+            fig_eq = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_eq.add_trace(
+                go.Scatter(
+                    x=equity_df.index,
+                    y=equity_df['Equity'],
+                    name="Equity",
+                    line=dict(color='#4e79a7')
+                ),
+                secondary_y=False
             )
-            st.plotly_chart(eq_fig, use_container_width=True)
-            
-            # Signals Table
+            fig_eq.add_trace(
+                go.Bar(
+                    x=equity_df.index,
+                    y=equity_df['Drawdown'],
+                    name="Drawdown",
+                    marker=dict(color='#e15759', opacity=0.3)
+                ),
+                secondary_y=True
+            )
+            fig_eq.update_layout(
+                height=400,
+                yaxis=dict(title="Equity ($)", side="left"),
+                yaxis2=dict(title="Drawdown %", side="right", range=[0, 100])
+            )
+            st.plotly_chart(fig_eq, use_container_width=True)
+
+            # Trade signals table
             st.subheader("🔍 Trade Signals")
+            signals['Date'] = signals['Datetime'].dt.date
             st.dataframe(
-                signals.style.format({'Price': '{:.2f}'})
+                signals[['Datetime', 'Signal', 'Price', 'Type']]
+                .style.format({'Price': '{:.2f}'})
                 .applymap(lambda x: 'color: green' if x == 'Buy' else 'color: red', 
                          subset=['Signal']),
-                height=400
+                height=400,
+                use_container_width=True
             )
-            
-            # Data Export
+
+            # Download
             st.download_button(
-                "📥 Export Signals as CSV",
+                "📥 Download Trade Log",
                 signals.to_csv(index=False),
-                "nas100_signals.csv"
+                "trade_signals.csv"
             )
-            
         else:
-            st.warning("⚠️ No trade signals generated with current parameters")
-            
+            st.warning("⚠️ No trade signals detected with current parameters")
     except Exception as e:
-        st.error(f"❌ Processing Error: {str(e)}")
+        st.error(f"❌ Error: {str(e)}")
+        st.info("Please check: 1) Data format 2) Date ranges 3) Missing values")
