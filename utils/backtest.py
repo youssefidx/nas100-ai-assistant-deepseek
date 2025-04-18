@@ -11,7 +11,7 @@ def backtest_strategy(df, signals, sl_pct=1.5, tp_pct=5.0):
     
     signals = signals.sort_index()
     
-    for i, (dt, row) in enumerate(signals.iterrows()):
+    for dt, row in signals.iterrows():
         try:
             idx = df.index.get_loc(dt)
             entry = row['Price']
@@ -20,15 +20,15 @@ def backtest_strategy(df, signals, sl_pct=1.5, tp_pct=5.0):
             sl = entry * (1 - sl_pct/100) if is_buy else entry * (1 + sl_pct/100)
             tp = entry * (1 + tp_pct/100) if is_buy else entry * (1 - tp_pct/100)
             
-            for j in range(idx, min(idx+100, len(df)):  # Max 100 candles hold
+            for j in range(idx, min(idx+100, len(df))):
                 high, low = df['High'].iloc[j], df['Low'].iloc[j]
                 
                 if is_buy:
                     if low <= sl: 
-                        equity *= 0.985  # -1.5%
+                        equity *= 0.985
                         break
                     elif high >= tp:
-                        equity *= 1.05  # +5%
+                        equity *= 1.05
                         wins += 1
                         break
                 else:
@@ -41,8 +41,7 @@ def backtest_strategy(df, signals, sl_pct=1.5, tp_pct=5.0):
                         break
             
             results.append(equity)
-            
-        except Exception as e:
+        except:
             continue
     
     stats = {
