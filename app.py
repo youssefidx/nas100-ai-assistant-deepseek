@@ -8,7 +8,7 @@ from utils.plots import plot_trades
 st.set_page_config(page_title="NAS100 AI Trading Assistant", layout="wide", page_icon="📈")
 st.title("📊 NAS100 AI Trading Assistant")
 
-# Sample data download in sidebar
+# Sample data download
 with st.sidebar:
     st.markdown("### Sample Data")
     sample_data = pd.DataFrame({
@@ -40,31 +40,26 @@ if uploaded_file:
         st.subheader("📈 Candlestick Preview")
         st.line_chart(df["Close"])
 
-        # Support/Resistance Display
-        st.subheader("📊 Key Levels")
-        supp, res = detect_zones(df)
-        support = sorted(list(set(round(s, 2) for s in supp if s > 0))[:10]
-        resistance = sorted(list(set(round(r, 2) for r in res if r > 0))[-10:]
+        # Support/Resistance
+        support, resistance = detect_zones(df)
+        support = sorted(list({round(s, 2) for s in support if s > 0}))[:10]
+        resistance = sorted(list({round(r, 2) for r in resistance if r > 0}))[-10:]
 
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("#### 🛑 Support")
-            st.json(support)
+            st.write(support)
         with col2:
-            st.markdown("#### 🚀 Resistance") 
-            st.json(resistance)
+            st.markdown("#### 🚀 Resistance")
+            st.write(resistance)
 
         use_volume = st.checkbox("Use Volume for Entry Confirmation", value=True)
-        session_start = pd.to_datetime("09:30:00").time()
-        signals = generate_trade_signals(df, (support, resistance), use_volume=use_volume, session_start=session_start)
+        signals = generate_trade_signals(df, (support, resistance), use_volume=use_volume)
 
         if not signals.empty:
             st.subheader("🔍 Filtered Signals (Top 20)")
-            st.dataframe(
-                signals.head(20).style.format({'Price': '{:.2f}'}),
-                height=400
-            )
-            
+            st.dataframe(signals.head(20))
+
             fig = plot_trades(df, signals)
             st.pyplot(fig)
 
@@ -92,4 +87,3 @@ if uploaded_file:
             st.warning("No trade signals detected.")
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
-        st.info("Please check: 1) CSV format 2) Required columns 3) Datetime format")
