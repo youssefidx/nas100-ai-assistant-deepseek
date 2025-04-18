@@ -5,46 +5,37 @@ def generate_trade_signals(df, zones, use_volume=True):
     support, resistance = zones
     signals = []
     
-    # Filter nearby levels (0.5% threshold)
-    support = [s for s in support if not any(abs(s-x)/s < 0.005 for x in support if x != s)]
-    resistance = [r for r in resistance if not any(abs(r-x)/r < 0.005 for x in resistance if x != r)]
+    # Filter significant levels
+    min_diff = df['Close'].mean() * 0.005  # 0.5% of average price
+    support = [s for s in support if not any(abs(s-x) < min_diff for x in support if x != s)]
+    resistance = [r for r in resistance if not any(abs(r-x) < min_diff for x in resistance if x != r)]
     
-    # Add confirmation requirement (price must cross level)
-    for i in range(2, len(df)):
-        prev_close = df['Close'].iloc[i-1]
-        current_close = df['Close'].iloc[i]
-        volume = df['Volume'].iloc[i] if 'Volume' in df.columns else 0
+    for i in range(1, len(df)):
+        current = df.iloc[i]
+        prev = df.iloc[i-1]
         
-        # Support Breakout (BUY)
+        # Check support bounce (BUY)
         for s in support:
-            if (prev_close < s) and (current_close > s):
-                if not use_volume or volume > df['Volume'].rolling(20).mean().iloc[i]:
+            if (prev['Low'] <= s * 1.001) and (current['Close'] > s * 1.001):
+                if not use_volume or current['Volume'] > df['Volume'].rolling(20).mean().iloc[i]:
                     signals.append({
                         "Datetime": df.index[i],
                         "Signal": "Buy",
-                        "Price": current_close,
-                        "Type": "Support Breakout"
+                        "Price": current['Close'],
+                        "Type": "Support Bounce"
                     })
                     break
         
-        # Resistance Rejection (SELL)
+        # Check resistance rejection (SELL)
         for r in resistance:
-            if (prev_close > r) and (current_close < r):
-                if not use_volume or volume > df['Volume'].rolling(20).mean().iloc[i]:
+            if (prev['High'] >= r * 0.999) and (current['Close'] < r * 0.999):
+                if not use_volume or current['Volume'] > df['Volume'].rolling(20).mean().iloc[i]:
                     signals.append({
                         "Datetime": df.index[i],
                         "Signal": "Sell",
-                        "Price": current_close,
-                        "Type": "Resistance Rejection"
+                        "Price": current['Close'],
+                        "Type": "Resistance Reject"
                     })
                     break
     
-    signals_df = pd.DataFrame(signals)
-    
-    # Remove duplicate signals in same direction
-    signals_df = signals_df.drop_duplicates(
-        subset=['Datetime', 'Signal'], 
-        keep='first'
-    )
-    
-    return signals_df
+    return pd.DataFrame(signals).drop_duplicates(subset=['Datetime', 'Signal'])
